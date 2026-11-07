@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { transform } from "esbuild";
+import { build } from "esbuild";
 import { Miniflare } from "miniflare";
 import { test } from "vitest";
 import { singleModuleManifest, useDispose, useTmp } from "../../test-shared";
@@ -105,7 +105,18 @@ async function clockedWorker(): Promise<string> {
 		source = source.replace(original, replacement);
 	}
 	source = `let testClock = 0;\n${source}\n${clockedFetch}`;
-	return (await transform(source, { loader: "ts", format: "esm" })).code;
+	const result = await build({
+		stdin: {
+			contents: source,
+			loader: "ts",
+			resolveDir: path.dirname(workerSource),
+		},
+		bundle: true,
+		format: "esm",
+		external: ["cloudflare:workers"],
+		write: false,
+	});
+	return result.outputFiles[0].text;
 }
 
 const clockedFetch = `
@@ -137,8 +148,16 @@ export default {
       ));
     }
     try {
-      const target = name === undefined ? state : await state.get(name);
-      return Response.json(await target[method](...args));
+      // The namespace object returns outcomes; the wrapped binding unwraps them.
+      const unwrap = (result) => {
+        if (result && typeof result === "object" && "ok" in result) {
+          if (result.ok) return result.value;
+          throw result.error;
+        }
+        return result;
+      };
+      const target = name === undefined ? state : unwrap(await state.get(name));
+      return Response.json(unwrap(await target[method](...args)));
     } catch (error) {
       return Response.json({ code: error.code, message: error.message }, { status: 400 });
     }
@@ -256,6 +275,13 @@ async function gitStatus(
 
 const start = Date.parse("2026-01-01T00:00:00.000Z");
 
+async function tokenStates(mf: Miniflare): Promise<string[]> {
+	const { tokens } = (await clockRpc(mf, "listTokens", [], "repo")) as {
+		tokens: { state: string }[];
+	};
+	return tokens.map(({ state }) => state);
+}
+
 test("artifacts: a failed metadata write cannot delete Git contents", async ({
 	expect,
 }) => {
@@ -354,7 +380,7 @@ test("artifacts: token expiry is exclusive at the exact workerd clock boundary a
 	expect(await gitStatus(first, String(write.plaintext), "upload")).toBe(200);
 
 	await setClock(first, expiration);
-	expect((await clockRpc(first, "listTokens", [], "repo")).total).toBe(1);
+	expect(await tokenStates(first)).toEqual(["expired", "expired", "active"]);
 	expect(await gitStatus(first, String(read.plaintext), "upload")).toBe(401);
 	expect(await gitStatus(first, String(write.plaintext), "receive")).toBe(401);
 	expect(await gitStatus(first, String(read.plaintext), "receive")).toBe(401);
@@ -363,7 +389,11 @@ test("artifacts: token expiry is exclusive at the exact workerd clock boundary a
 	const restarted = new Miniflare(clockOptions(script, root));
 	useDispose(restarted);
 	await setClock(restarted, expiration + 1);
-	expect((await clockRpc(restarted, "listTokens", [], "repo")).total).toBe(1);
+	expect(await tokenStates(restarted)).toEqual([
+		"expired",
+		"expired",
+		"active",
+	]);
 	expect(await gitStatus(restarted, String(write.plaintext), "upload")).toBe(
 		401
 	);
@@ -387,7 +417,7 @@ test("artifacts: token expiry is exclusive at the exact workerd clock boundary a
 	).toBe(401);
 });
 
-test("artifacts: saving repositories prunes revoked and expired token records", async ({
+test("artifacts: listTokens reports revoked and expired tokens", async ({
 	expect,
 }) => {
 	const mf = new Miniflare(clockOptions(await clockedWorker()));
@@ -396,18 +426,45 @@ test("artifacts: saving repositories prunes revoked and expired token records", 
 	await clockRpc(mf, "create", ["repo"]);
 	const expired = await clockRpc(mf, "createToken", ["read", 60], "repo");
 	const revoked = await clockRpc(mf, "createToken", ["read", 600], "repo");
+	expect(await clockRpc(mf, "revokeToken", [revoked.id], "repo")).toBe(true);
 	await setClock(mf, start + 60_000);
 	const active = await clockRpc(mf, "createToken", ["read", 600], "repo");
-	const stored = async () =>
-		(await (
-			await clockRequest(mf, { action: "storedTokens", name: "repo" })
-		).json()) as string[];
-	expect(await stored()).toHaveLength(3);
-	expect(await stored()).not.toContain(expired.id);
-	expect(await stored()).toContain(revoked.id);
-	expect(await clockRpc(mf, "revokeToken", [revoked.id], "repo")).toBe(true);
-	expect(await stored()).not.toContain(revoked.id);
-	expect(await stored()).toContain(active.id);
+	const listed = (await clockRpc(mf, "listTokens", [], "repo")) as {
+		total: number;
+		tokens: { id: string; state: string }[];
+	};
+	// The creation token plus the three read tokens, newest first.
+	expect(listed.total).toBe(4);
+	const states = new Map(listed.tokens.map(({ id, state }) => [id, state]));
+	expect(listed.tokens[0].id).toBe(active.id);
+	expect(states.get(String(active.id))).toBe("active");
+	expect(states.get(String(revoked.id))).toBe("revoked");
+	expect(states.get(String(expired.id))).toBe("expired");
+	// Listed history must not let a revoked or expired token authenticate.
+	expect(await gitStatus(mf, String(expired.plaintext), "upload")).toBe(401);
+	expect(await gitStatus(mf, String(revoked.plaintext), "upload")).toBe(401);
+});
+
+test("artifacts: saving repositories keeps a bounded token history", async ({
+	expect,
+}) => {
+	const mf = new Miniflare(clockOptions(await clockedWorker()));
+	useDispose(mf);
+	await setClock(mf, start);
+	await clockRpc(mf, "create", ["repo"]);
+	const first = await clockRpc(mf, "createToken", ["read", 60], "repo");
+	for (let index = 0; index < 100; index++) {
+		await clockRpc(mf, "createToken", ["read", 60], "repo");
+	}
+	await setClock(mf, start + 60_000);
+	// The creation token is still active; 101 read tokens have now expired.
+	const active = await clockRpc(mf, "createToken", ["read", 600], "repo");
+	const stored = (await (
+		await clockRequest(mf, { action: "storedTokens", name: "repo" })
+	).json()) as string[];
+	expect(stored).toHaveLength(102);
+	expect(stored).not.toContain(first.id);
+	expect(stored).toContain(active.id);
 });
 
 test("artifacts: concurrent same-name creates and forks commit one winner each", async ({

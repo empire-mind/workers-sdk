@@ -20,6 +20,8 @@ const WORKER_TEST = dedent`
 		expect((await repo.info()).name).toBe("demo");
 		expect((await env.REPOS.list()).repos).toHaveLength(1);
 		expect(await repo.readFile({ ref: "main", path: "missing.txt" })).toBeNull();
+		const missing = await env.REPOS.get("missing").catch((error) => error);
+		expect(missing).toMatchObject({ name: "ArtifactsError", code: "NOT_FOUND" });
 	});
 `;
 
@@ -85,5 +87,7 @@ test.for([
 		const result = await vitestRun();
 		await expect(result.exitCode, result.stderr).resolves.toBe(0);
 		expect(result.stdout + result.stderr).not.toContain("deployed resource");
+		// A caught ArtifactsError must not be reported by verbose workerd.
+		expect(result.stdout + result.stderr).not.toContain("uncaught exception");
 	}
 );

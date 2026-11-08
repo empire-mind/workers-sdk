@@ -1,5 +1,59 @@
 # create-cloudflare
 
+## 2.74.10
+
+### Patch Changes
+
+- [#16776](https://github.com/cloudflare/workers-sdk/pull/16776) [`c727c7d`](https://github.com/cloudflare/workers-sdk/commit/c727c7d58399c22f5855664d75664aca9ae27318) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency      | From   | To     |
+  | --------------- | ------ | ------ |
+  | create-next-app | 16.4.3 | 16.4.5 |
+
+- [#16778](https://github.com/cloudflare/workers-sdk/pull/16778) [`907c579`](https://github.com/cloudflare/workers-sdk/commit/907c57909c81299f0d8962e2791c4cad4396d72e) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency | From  | To    |
+  | ---------- | ----- | ----- |
+  | nuxi       | 4.0.1 | 4.0.3 |
+
+- [#16779](https://github.com/cloudflare/workers-sdk/pull/16779) [`b494e10`](https://github.com/cloudflare/workers-sdk/commit/b494e10da094636e381ae7a4be92d32702e8ec7c) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency      | From   | To     |
+  | --------------- | ------ | ------ |
+  | @angular/create | 22.2.5 | 22.2.6 |
+
+- [#16781](https://github.com/cloudflare/workers-sdk/pull/16781) [`ec89219`](https://github.com/cloudflare/workers-sdk/commit/ec892191d046af78bf5ad5c0c3dc69816d576832) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency  | From  | To    |
+  | ----------- | ----- | ----- |
+  | create-vite | 9.3.3 | 9.3.4 |
+
+- [#16782](https://github.com/cloudflare/workers-sdk/pull/16782) [`a50f749`](https://github.com/cloudflare/workers-sdk/commit/a50f7490ce0571c12c9d03ced8a1769a37104b74) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update dependencies of "create-cloudflare"
+
+  The following dependency versions have been updated:
+
+  | Dependency    | From  | To    |
+  | ------------- | ----- | ----- |
+  | create-analog | 2.9.3 | 2.9.6 |
+
+- [#16746](https://github.com/cloudflare/workers-sdk/pull/16746) [`abf924e`](https://github.com/cloudflare/workers-sdk/commit/abf924ee1820b4af139f21dffc877eaf6122c056) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update `DEFAULT_COMPAT_DATE` to 2026-11-06
+
+  Use the bundled workerd release's compatibility date by default when scaffolding new projects or when no compatibility date is configured.
+
+- [#16066](https://github.com/cloudflare/workers-sdk/pull/16066) [`4112820`](https://github.com/cloudflare/workers-sdk/commit/41128206d0158bce2243bec7bd59fa7efc563aaf) Thanks [@petebacondarwin](https://github.com/petebacondarwin)! - Add an explicit opt-out for main module imports in generated Worker types
+
+  Use `wrangler types --include-main-module=false` when the Worker entrypoint is generated build output that should not be type-checked as application source. The corresponding `includeMainModule` option is available in the experimental type-generation API. The option is preserved by `--check` and automatic regeneration. Omitting the import opts out of module-derived `ctx.exports` typing while preserving runtime types, environment bindings, and Durable Object namespace declarations.
+
+  New SvelteKit Workers projects created with C3 use this option so their generated declarations remain stable before and after a build. Imports needed to type Durable Object, service, and Workflow bindings are unaffected.
+
 ## 2.74.9
 
 ### Patch Changes
